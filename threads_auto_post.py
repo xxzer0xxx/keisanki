@@ -27,9 +27,20 @@ COMPOSE_SELECTORS = [
     "button[aria-label*='作成']",
     "button[aria-label*='thread' i]",
     "button[aria-label*='new' i]",
+    "button[aria-label*='投稿を作成']",
+    "button[aria-label*='create' i]",
     "a[href*='/new']",
+    "a[href*='/create']",
     "button:has-text('新規スレッド')",
     "button:has-text('New thread')",
+]
+LOGGED_OUT_SELECTORS = [
+    "input[name='username']",
+    "input[name='password']",
+    "button:has-text('Log in')",
+    "button:has-text('ログイン')",
+    "button:has-text('Sign up')",
+    "button:has-text('登録')",
 ]
 
 
@@ -196,6 +207,10 @@ def get_compose_button(page: Page):
     return first_visible(page, COMPOSE_SELECTORS)
 
 
+def looks_logged_out(page: Page) -> bool:
+    return first_visible(page, LOGGED_OUT_SELECTORS) is not None
+
+
 def ensure_login(page: Page, no_login_prompt: bool) -> bool:
     page.goto("https://www.threads.net/", wait_until="domcontentloaded")
     if get_compose_button(page) is not None:
@@ -211,8 +226,12 @@ def ensure_login(page: Page, no_login_prompt: bool) -> bool:
     input("ログイン完了後、ここでEnterを押してください > ")
     page.goto("https://www.threads.net/", wait_until="domcontentloaded")
     if get_compose_button(page) is None:
-        print("[ERROR] ログイン確認に失敗しました。もう一度実行してください。")
-        return False
+        if looks_logged_out(page):
+            print("[ERROR] ログイン確認に失敗しました。もう一度実行してください。")
+            return False
+        print("[WARN] 投稿ボタンの確認はできませんでしたが、処理を続行します。")
+        print("[WARN] 投稿時に失敗する場合は、Threadsのホーム画面を開いて再実行してください。")
+        return True
 
     print("[OK] ログイン確認が完了しました。")
     return True
@@ -222,10 +241,12 @@ def create_post(page: Page, text: str, dry_run: bool) -> bool:
     page.goto("https://www.threads.net/", wait_until="domcontentloaded")
 
     compose = get_compose_button(page)
-    if compose is None:
-        print("[ERROR] 新規投稿ボタンが見つかりません。ログイン状態を確認してください。")
-        return False
-    compose.click()
+    if compose is not None:
+        compose.click()
+    else:
+        # UI変更時の保険: 新規投稿ショートカットを試す
+        page.keyboard.press("n")
+        time.sleep(1)
 
     text_box = first_visible(
         page,
@@ -236,7 +257,8 @@ def create_post(page: Page, text: str, dry_run: bool) -> bool:
         ],
     )
     if text_box is None:
-        print("[ERROR] 投稿入力欄が見つかりません。画面UIが変更された可能性があります。")
+        print("[ERROR] 投稿入力欄が見つかりません。")
+        print("[ERROR] Threadsのホーム画面を開いてから再試行してください。")
         return False
 
     text_box.click()
