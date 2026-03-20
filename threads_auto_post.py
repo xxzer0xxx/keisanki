@@ -6,8 +6,18 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, time as dt_time
 from pathlib import Path
+from typing import Any
 
-from playwright.sync_api import Page, TimeoutError as PlaywrightTimeoutError, sync_playwright
+try:
+    from playwright.sync_api import (
+        Page,
+        TimeoutError as PlaywrightTimeoutError,
+        sync_playwright,
+    )
+except ModuleNotFoundError:
+    Page = Any  # type: ignore[misc,assignment]
+    PlaywrightTimeoutError = TimeoutError  # type: ignore[assignment]
+    sync_playwright = None
 
 
 DATE_FORMATS = ("%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M")
@@ -236,6 +246,11 @@ def monitor_once_posts(
     interval_seconds: int,
     dry_run: bool,
 ) -> None:
+    if sync_playwright is None:
+        raise RuntimeError(
+            "Playwrightが未インストールです。READMEの手順で準備してください。"
+        )
+
     posted_state = load_posted_state(state_path)
     pending = [p for p in posts if p.post_id not in posted_state.once_posted_ids]
 
@@ -289,6 +304,11 @@ def monitor_daily_posts(
     interval_seconds: int,
     dry_run: bool,
 ) -> None:
+    if sync_playwright is None:
+        raise RuntimeError(
+            "Playwrightが未インストールです。READMEの手順で準備してください。"
+        )
+
     if not posts:
         print("dailyモードの投稿予定がありません。")
         return
