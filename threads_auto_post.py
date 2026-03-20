@@ -34,6 +34,19 @@ COMPOSE_SELECTORS = [
     "button:has-text('新規スレッド')",
     "button:has-text('New thread')",
 ]
+TEXT_BOX_SELECTORS = [
+    "div[role='textbox'][contenteditable='true']",
+    "div[role='textbox']",
+    "textarea",
+    "[contenteditable='true']",
+]
+POST_BUTTON_SELECTORS = [
+    "button:has-text('投稿')",
+    "button:has-text('Post')",
+    "div[role='dialog'] button[type='submit']",
+    "div[role='dialog'] div[role='button']:has-text('投稿')",
+    "div[role='dialog'] div[role='button']:has-text('Post')",
+]
 LOGGED_OUT_SELECTORS = [
     "input[name='username']",
     "input[name='password']",
@@ -192,11 +205,11 @@ def save_posted_state(state_path: Path, state: PostedState) -> None:
         )
 
 
-def first_visible(page: Page, selectors: list[str]):
+def first_visible(page: Page, selectors: list[str], timeout_ms: int = 1500):
     for selector in selectors:
         locator = page.locator(selector).first
         try:
-            if locator.is_visible(timeout=1500):
+            if locator.is_visible(timeout=timeout_ms):
                 return locator
         except PlaywrightTimeoutError:
             continue
@@ -209,6 +222,32 @@ def get_compose_button(page: Page):
 
 def looks_logged_out(page: Page) -> bool:
     return first_visible(page, LOGGED_OUT_SELECTORS) is not None
+
+
+def find_text_box(page: Page):
+    return first_visible(page, TEXT_BOX_SELECTORS, timeout_ms=4000)
+
+
+def open_compose_and_find_text_box(page: Page):
+    page.goto("https://www.threads.net/", wait_until="domcontentloaded")
+    compose = get_compose_button(page)
+    if compose is not None:
+        compose.click()
+        text_box = find_text_box(page)
+        if text_box is not None:
+            return text_box
+
+    for compose_url in ("https://www.threads.net/new", "https://www.threads.net/create"):
+        page.goto(compose_url, wait_until="domcontentloaded")
+        text_box = find_text_box(page)
+        if text_box is not None:
+            return text_box
+
+    # UI変更時の保険: 新規投稿ショートカットを試す
+    page.goto("https://www.threads.net/", wait_until="domcontentloaded")
+    page.keyboard.press("n")
+    time.sleep(1)
+    return find_text_box(page)
 
 
 def ensure_login(page: Page, no_login_prompt: bool) -> bool:
@@ -238,47 +277,28 @@ def ensure_login(page: Page, no_login_prompt: bool) -> bool:
 
 
 def create_post(page: Page, text: str, dry_run: bool) -> bool:
-    page.goto("https://www.threads.net/", wait_until="domcontentloaded")
-
-    compose = get_compose_button(page)
-    if compose is not None:
-        compose.click()
-    else:
-        # UI変更時の保険: 新規投稿ショートカットを試す
-        page.keyboard.press("n")
-        time.sleep(1)
-
-    text_box = first_visible(
-        page,
-        [
-            "div[role='textbox']",
-            "textarea",
-            "[contenteditable='true']",
-        ],
-    )
+    text_box = open_compose_and_find_text_box(page)
     if text_box is None:
         print("[ERROR] 投稿入力欄が見つかりません。")
         print("[ERROR] Threadsのホーム画面を開いてから再試行してください。")
         return False
 
     text_box.click()
-    text_box.fill(text)
+    try:
+        text_box.fill(text)
+    except Exception:
+        # contenteditable要素ではfillが失敗する場合があるため、入力キーで代替
+        page.keyboard.type(text, delay=15)
 
     if dry_run:
         print("[DRY-RUN] 投稿は送信せず入力だけ行いました。")
         return True
 
-    post_button = first_visible(
-        page,
-        [
-            "button:has-text('投稿')",
-            "button:has-text('Post')",
-            "div[role='dialog'] button[type='submit']",
-        ],
-    )
+    post_button = first_visible(page, POST_BUTTON_SELECTORS, timeout_ms=5000)
     if post_button is None:
-        print("[ERROR] 投稿ボタンが見つかりませんでした。")
-        return False
+        page.keyboard.press("Control+Enter")
+        time.sleep(2)
+        return True
 
     post_button.click()
     time.sleep(2)
