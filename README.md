@@ -6,6 +6,7 @@
 
 - 指定日時になったら Threads に自動投稿
 - 毎日同じ時刻に自動投稿（dailyモード）
+- Linuxでログイン時に自動起動（PC起動後）
 - 一度投稿した内容は履歴に記録（重複投稿を防止）
 - 初回ログインだけ手動、2回目以降はログイン状態を再利用
 - `--dry-run` で投稿せずに動作確認可能
@@ -81,6 +82,42 @@ python threads_auto_post.py --mode daily --csv daily_posts.csv
 これは終了するまで動き続け、毎日指定時刻に投稿します。  
 止めるときは `Ctrl+C` を押してください。
 
+### PC起動後に自動開始（Linux GUI）
+
+> これは「電源ON直後」ではなく、**ログイン後に自動起動**です。
+
+1) まず1回だけ手動ログインを保存
+
+```bash
+source .venv/bin/activate
+python threads_auto_post.py --mode daily --csv daily_posts.csv
+```
+
+ログイン後、監視が始まったら `Ctrl+C` で止めてOKです。  
+（この時点でログイン状態が保存されます）
+
+2) 自動起動を設定
+
+```bash
+chmod +x run_threads_daily.sh install_autostart_linux.sh
+bash install_autostart_linux.sh
+```
+
+3) PCを再起動して確認
+
+ログ確認:
+
+```bash
+tail -f ~/.threads_auto_post.log
+```
+
+4) 自動起動を解除したいとき
+
+```bash
+chmod +x uninstall_autostart_linux.sh
+bash uninstall_autostart_linux.sh
+```
+
 ---
 
 ## よく使うオプション
@@ -101,6 +138,12 @@ python threads_auto_post.py --csv posts.csv --check-interval 30
 
 ```bash
 python threads_auto_post.py --mode daily --csv daily_posts.csv --dry-run
+```
+
+- ログイン待ち入力をしない（自動起動向け）
+
+```bash
+python threads_auto_post.py --mode daily --csv daily_posts.csv --no-login-prompt
 ```
 
 ---

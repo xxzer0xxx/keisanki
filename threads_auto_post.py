@@ -22,6 +22,15 @@ except ModuleNotFoundError:
 
 DATE_FORMATS = ("%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M")
 TIME_FORMAT = "%H:%M"
+COMPOSE_SELECTORS = [
+    "button[aria-label*='新規']",
+    "button[aria-label*='作成']",
+    "button[aria-label*='thread' i]",
+    "button[aria-label*='new' i]",
+    "a[href*='/new']",
+    "button:has-text('新規スレッド')",
+    "button:has-text('New thread')",
+]
 
 
 @dataclass
@@ -183,21 +192,36 @@ def first_visible(page: Page, selectors: list[str]):
     return None
 
 
+def get_compose_button(page: Page):
+    return first_visible(page, COMPOSE_SELECTORS)
+
+
+def ensure_login(page: Page, no_login_prompt: bool) -> bool:
+    page.goto("https://www.threads.net/", wait_until="domcontentloaded")
+    if get_compose_button(page) is not None:
+        print("[OK] ログイン状態を確認しました。")
+        return True
+
+    if no_login_prompt:
+        print("[ERROR] ログイン状態を確認できません。")
+        print("一度だけ手動起動（--no-login-prompt なし）でログインしてください。")
+        return False
+
+    print("ブラウザを開きます。Threadsにログインしてから、Enterキーを押してください。")
+    input("ログイン完了後、ここでEnterを押してください > ")
+    page.goto("https://www.threads.net/", wait_until="domcontentloaded")
+    if get_compose_button(page) is None:
+        print("[ERROR] ログイン確認に失敗しました。もう一度実行してください。")
+        return False
+
+    print("[OK] ログイン確認が完了しました。")
+    return True
+
+
 def create_post(page: Page, text: str, dry_run: bool) -> bool:
     page.goto("https://www.threads.net/", wait_until="domcontentloaded")
 
-    compose = first_visible(
-        page,
-        [
-            "button[aria-label*='新規']",
-            "button[aria-label*='作成']",
-            "button[aria-label*='thread' i]",
-            "button[aria-label*='new' i]",
-            "a[href*='/new']",
-            "button:has-text('新規スレッド')",
-            "button:has-text('New thread')",
-        ],
-    )
+    compose = get_compose_button(page)
     if compose is None:
         print("[ERROR] 新規投稿ボタンが見つかりません。ログイン状態を確認してください。")
         return False
@@ -245,6 +269,7 @@ def monitor_once_posts(
     profile_dir: Path,
     interval_seconds: int,
     dry_run: bool,
+    no_login_prompt: bool,
 ) -> None:
     if sync_playwright is None:
         raise RuntimeError(
@@ -258,8 +283,6 @@ def monitor_once_posts(
         print("投稿予定はすべて完了済みです。")
         return
 
-    print("ブラウザを開きます。Threadsにログインしてから、Enterキーを押してください。")
-
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir=str(profile_dir),
@@ -268,8 +291,8 @@ def monitor_once_posts(
             viewport={"width": 1280, "height": 800},
         )
         page = context.new_page()
-        page.goto("https://www.threads.net/", wait_until="domcontentloaded")
-        input("ログイン完了後、ここでEnterを押してください > ")
+        if not ensure_login(page, no_login_prompt=no_login_prompt):
+            return
 
         print("監視を開始しました。Ctrl+C で終了できます。")
         try:
@@ -303,6 +326,7 @@ def monitor_daily_posts(
     profile_dir: Path,
     interval_seconds: int,
     dry_run: bool,
+    no_login_prompt: bool,
 ) -> None:
     if sync_playwright is None:
         raise RuntimeError(
@@ -314,7 +338,6 @@ def monitor_daily_posts(
         return
 
     posted_state = load_posted_state(state_path)
-    print("ブラウザを開きます。Threadsにログインしてから、Enterキーを押してください。")
 
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
@@ -324,8 +347,8 @@ def monitor_daily_posts(
             viewport={"width": 1280, "height": 800},
         )
         page = context.new_page()
-        page.goto("https://www.threads.net/", wait_until="domcontentloaded")
-        input("ログイン完了後、ここでEnterを押してください > ")
+        if not ensure_login(page, no_login_prompt=no_login_prompt):
+            return
 
         print("毎日モードで監視を開始しました。Ctrl+C で終了できます。")
         try:
@@ -395,6 +418,11 @@ def main() -> None:
         default="once",
         help="once: 日時指定で1回投稿 / daily: 毎日同じ時刻に投稿",
     )
+    parser.add_argument(
+        "--no-login-prompt",
+        action="store_true",
+        help="ログイン待ちのEnter入力を行わない（自動起動向け）",
+    )
     args = parser.parse_args()
 
     if args.check_interval < 5:
@@ -413,6 +441,7 @@ def main() -> None:
             profile_dir=profile_dir,
             interval_seconds=args.check_interval,
             dry_run=args.dry_run,
+            no_login_prompt=args.no_login_prompt,
         )
     else:
         posts = load_daily_posts(csv_path)
@@ -423,6 +452,7 @@ def main() -> None:
             profile_dir=profile_dir,
             interval_seconds=args.check_interval,
             dry_run=args.dry_run,
+            no_login_prompt=args.no_login_prompt,
         )
 
 
